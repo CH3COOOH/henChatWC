@@ -134,18 +134,23 @@ function connect_and_send(server, what2send, isWait) {
 
 	ws.onerror = function(e) {
 		console.log("[ws.onerror] Server error.");
-		fillMessageBoard("!!! Server error.");
+		fillMessageBoard("!!! Server error.", cls=false);
 	};
 }
 
-function fillMessageBoard(msg) {
+function fillMessageBoard(msg, cls=true) {
 	// ===============================
 	// Search "XSS attack" for detail
 	// ===============================
 	// function xssAvoid(rawStr){
 	// 	return rawStr.replace(/</g, '&lt').replace(/>/g, '&gt');
 	// }
-	$('#output_msg').val(msg);
+	if (cls === true) {
+		$('#output_msg').val(msg);
+	}
+	else {
+		$('#output_msg').val($('#output_msg').val()+'\n'+msg);
+	}
 }
 
 // ===== Secondary functions ====================

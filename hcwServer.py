@@ -84,23 +84,27 @@ class HCWS:
 	# 		'isOnetime': boolean
 	# }
 		print(msg)
-		d_msg = json.loads(msg)
-		if d_msg['action'] == 'put':
-			res = self.msgdb.insert(d_msg['key_hash'], d_msg['msg'], d_msg['timeout'], d_msg['isOnetime'])
-			if res == 0:
-				self.__reply(server, client, 0, 'OK')
-			else:
-				self.__reply(server, client, -1, errorcode.code2msg[res])
+		try:
+			d_msg = json.loads(msg)
+			if d_msg['action'] == 'put':
+				res = self.msgdb.insert(d_msg['key_hash'], d_msg['msg'], d_msg['timeout'], d_msg['isOnetime'])
+				if res == 0:
+					self.__reply(server, client, 0, 'OK')
+				else:
+					self.__reply(server, client, -1, errorcode.code2msg[res])
 
-		elif d_msg['action'] == 'get':
-			msg_in_db = self.msgdb.get(d_msg['key_hash'])
-			if type(msg_in_db) == str:
-				self.__reply(server, client, 1, msg_in_db)
-			else:
-				self.__reply(server, client, -1, errorcode.code2msg[msg_in_db])
+			elif d_msg['action'] == 'get':
+				msg_in_db = self.msgdb.get(d_msg['key_hash'])
+				if type(msg_in_db) == str:
+					self.__reply(server, client, 1, msg_in_db)
+				else:
+					self.__reply(server, client, -1, errorcode.code2msg[msg_in_db])
 
-		else:
-			self.__reply(server, client, -1, 'Bad request')
+			else:
+				self.__reply(server, client, -1, 'Bad request')
+		except:
+			print('Error occurred.')
+			self.__reply(server, client, -1, 'Server error')
 
 
 	def start(self):
