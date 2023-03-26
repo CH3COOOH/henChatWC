@@ -30,7 +30,7 @@ class LowestDB:
 			del self.hash_map[hash_]
 			return 0
 		else:
-			return -1
+			return -0x04
 
 	def extract_value(self, hash_, col):
 		if hash_ in self.hash_map.keys():
