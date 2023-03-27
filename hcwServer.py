@@ -10,32 +10,17 @@ import sys
 
 from websocket_server import WebsocketServer
 from msgdb import MsgDB
-import azlib.ut as aut
+import azlib.pr as apr
 import errorcode
 
-SERVER_VER = '230326'
-MAX_ONLINE = 15
+SERVER_VER = '230327'
 
-def timeNow():
-	import datetime
-	now = datetime.datetime.now()
-	return {'YY': now.strftime('%Y'),
-			'MM': now.strftime('%m'),
-			'DD': now.strftime('%d'),
-			'hh': now.strftime('%H'),
-			'mm': now.strftime('%M'),
-			'ss': now.strftime('%S')}
-
-def log(text):
-	ct = timeNow()
-	print('[%s.%s.%s-%s:%s:%s] %s' % (ct['YY'], ct['MM'], ct['DD'], ct['hh'], ct['mm'], ct['ss'], text))
-
+log = apr.Log()
 
 def randStr(length):
 	from random import choice
 	randPool = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!#$%&*?@~-'
 	return ''.join(choice(randPool) for _ in xrange(length))
-
 
 class HCWS:
 
@@ -45,7 +30,6 @@ class HCWS:
 		self.onlineLst = {}
 		self.msgdb = msgdb
 		self.online_total = 0
-
 
 	def __getClientById(self, cid):
 		for i in self.onlineLst.keys():
@@ -59,19 +43,20 @@ class HCWS:
 		server.send_message(client, json.dumps(reply))
 
 
+
 	def newClient(self, client, server):
 		self.online_total += 1
 		client['id'] = str(time.time())
-		log('New client comes at %s. There are %d clients online.' % (client['id'], self.online_total))
+		log.print('New client comes at %s. There are %d clients online.' % (client['id'], self.online_total))
 
 
 	def clientLeft(self, client, server):
 		self.online_total -= 1
-		log('ID: [%s] left. There are %d clients online.' % (client['id'], self.online_total))
+		log.print('ID: [%s] left. There are %d clients online.' % (client['id'], self.online_total))
 		try:
 			del(self.onlineLst[client['id']])
 		except:
-			log('ID: [%s] has already been removed.' % client['id'])
+			log.print('ID: [%s] has already been removed.' % client['id'])
 
 
 	def msgReceived(self, client, server, msg):
@@ -108,7 +93,7 @@ class HCWS:
 
 
 	def start(self):
-		log('Launch a server on port %d...' % self.port)
+		log.print('Launch a server on port %d...' % self.port)
 		server = WebsocketServer(self.port, host=self.host)
 		server.set_fn_new_client(self.newClient)
 		server.set_fn_client_left(self.clientLeft)
