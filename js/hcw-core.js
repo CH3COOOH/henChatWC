@@ -1,7 +1,9 @@
-// 2023.03.26: 
+// 2023.03.26: 1st live
+// 2023.03.27: Get url without params; no server error message in output_msg
 
-var CLIENT_VER = '230326';
+var CLIENT_VER = '230327';
 var DEFAULT_SERVER = 'wss://app.henchat.net/hcw';
+// var DEFAULT_SERVER = 'ws://127.0.0.1:9002';
 
 var cache_0 = null;
 
@@ -111,8 +113,8 @@ function connect_and_send(server, what2send, isWait) {
 		if (getMsg.type === 0) {
 			// -- Result of message sending
 			console.log("[ws.onmessage] Server replies: OK");
-			var full_url = `[Full path]\n${window.location.href}?hash=${cache_0}&key=${$('#input_key').val()}\n\n`;
-			var hash_url = `[Hash only]\n${window.location.href}?hash=${cache_0}\n`;
+			var full_url = `[Full path]\n${getUrlWithoutParam()}?hash=${cache_0}&key=${$('#input_key').val()}\n\n`;
+			var hash_url = `[Hash only]\n${getUrlWithoutParam()}?hash=${cache_0}\n`;
 			var res = full_url + hash_url
 			$('#output_msg').val(res);
 		}
@@ -134,7 +136,7 @@ function connect_and_send(server, what2send, isWait) {
 
 	ws.onerror = function(e) {
 		console.log("[ws.onerror] Server error.");
-		fillMessageBoard("!!! Server error.", cls=false);
+		// fillMessageBoard("!!! Server error.", cls=false);
 	};
 }
 
@@ -168,6 +170,11 @@ function getHashAndKeyFromUrl()
 		i++;
 	}
 	return i;
+}
+
+function getUrlWithoutParam()
+{
+	return window.location.protocol+"//"+window.location.host+""+window.location.pathname;
 }
 
 function msg2Json(msg, key)
