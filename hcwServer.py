@@ -109,7 +109,7 @@ def main(host, port, msgdb):
 
 
 if __name__ == '__main__':
-	mdb = MsgDB(9999)
+	mdb = MsgDB(max_n=-99, db_fname='hcwdb.db')
 	if len(sys.argv) < 2:
 		main(host='127.0.0.1', port=9002, msgdb=mdb)
 	else:
