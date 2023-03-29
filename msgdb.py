@@ -1,39 +1,40 @@
 # -*- coding:utf-8 -*-
 
 '''
-+----+-------+-------+
-|hash|message|timeout|
-+----+-------+-------+
++----+-------+-------+-------+
+|hash|message|timeout|isOneTime|
++----+-------+-------+-------+
 '''
 
 import time
 from lowestdb import LowestDB
 
 class MsgDB:
-	def __init__(self, max_n):
-		self.ldb = LowestDB(['msg', 'timeout', 'isOneTime'], max_n=max_n)
+	def __init__(self, max_n, db_fname='msgdb.db'):
+		self.ldb = LowestDB([('msg', 'TEXT'), ('timeout', 'INT'), ('isOneTime', 'BOOLEAN')], table_name='HENCHATWC', max_n=max_n, db_fname=db_fname)
 
 	def insert(self, hash_, msg, timeout, isOneTime):
 		return self.ldb.insert_row(hash_, [msg, timeout, isOneTime])
 
 	def delete(self, hash_):
-		return self.ldb.delete_row(hash_)
+		return self.ldb.delete_row_by_hash(hash_)
 
 	def isOutdated(self, hash_):
-		timeout = self.ldb.extract_value(hash_, 'timeout')
+		timeout = self.ldb.extract_value_by_hash(hash_, 'timeout')
 		if (timeout != None) and (time.time() > timeout):
 			return True
 		else:
 			return False
 
 	def get(self, hash_):
-		if self.isOutdated(hash_):
-			self.delete(hash_)
-			return -0x11
-		msg = self.ldb.extract_value(hash_, 'msg')
-		if msg == None:
+		record = self.ldb.extract_row_by_hash(hash_)
+		if record == None:
 			return -0x12  ## --- Hash does not existed
-		if self.ldb.extract_value(hash_, 'isOneTime'):
+		if record[2] < time.time():
+			self.delete(hash_)
+			return -0x11  ## --- Outdated
+		msg = record[1]
+		if record[3] == True:
 			self.delete(hash_)
 		return msg
 
@@ -43,8 +44,8 @@ if __name__ == '__main__':
 	print(mdb.insert('80da6755as2s', '48aff4fdawds64fa5a==', time.time()+3600, True))
 	print(mdb.insert('12da6755adsv', 'awdsf4fdawds64fa5a==', time.time()+3600, False))
 	time.sleep(3)
-	print(mdb.get('90da67dsfas2'))
+	print(mdb.get('90da67dsfas2'))  ## -0x11
 	print(mdb.get('80da6755as2s'))
-	print(mdb.get('80da6755as2s'))
+	print(mdb.get('80da6755as2s'))  ## -0x12
 	print(mdb.get('12da6755adsv'))
 	print(mdb.get('12da6755adsv'))
