@@ -89,7 +89,7 @@ function formStatusSet() {
 // ws.onclose()
 // ws.onerror()
 // ================================================================
-function connect_and_send(server, what2send, isWait) {
+function connect_and_send(server, what2send) {
 
 	// -- Connect to Web Socket
 	var ws = new WebSocket(server);
@@ -101,9 +101,6 @@ function connect_and_send(server, what2send, isWait) {
 		ws.send(what2send);
 		isSent = true;
 		console.log('[ws.onopen] Message has been sent.');
-		if (isWait === false) {
-			ws.close();
-		}
 	};
 		
 	ws.onmessage = function(e) {
@@ -124,9 +121,6 @@ function connect_and_send(server, what2send, isWait) {
 		}
 		else {
 			fillMessageBoard(getMsg.payload);
-		}
-		if (isSent === true) {
-			ws.close();
 		}
 	};
 

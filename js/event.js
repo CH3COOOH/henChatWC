@@ -6,7 +6,7 @@ $('#btn_gen').click(function () {
 		$('#input_key').val(randomStr(32, false));
 	}
 	var send_msg = JSON.stringify(msg2Json($('#input_msg').val(), $('#input_key').val()));
-	connect_and_send(DEFAULT_SERVER, send_msg, true);
+	connect_and_send(DEFAULT_SERVER, send_msg);
 	console.log(send_msg);
 });
 
@@ -19,6 +19,6 @@ $('#btn_fetch').click(function () {
 		'action': 'get',
 		'key_hash': $('#input_msg').val()
 	});
-	connect_and_send(DEFAULT_SERVER, get_requirement, true);
+	connect_and_send(DEFAULT_SERVER, get_requirement);
 	console.log(get_requirement);
 });
