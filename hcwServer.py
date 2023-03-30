@@ -31,26 +31,25 @@ class HCWS:
 		self.msgdb = msgdb
 		self.online_total = 0
 
-	def __getClientById(self, cid):
-		for i in self.onlineLst.keys():
-			if cid == i:
-				return self.onlineLst[i][0]
-		return None
-
-
 	def __reply(self, server, client, type_, payload):
 		reply = {'type': type_, 'payload': payload}
 		server.send_message(client, json.dumps(reply))
 
+	def __kickoff(self, server, client):
+		## Refer the source code
+		client['handler'].send_close(1000, bytes('', encoding='utf-8'))
+		server._terminate_client_handler(client['handler'])
 
+	def __reply_and_kickoff(self, server, client, type_, payload):
+		self.__reply(server, client, type_, payload)
+		self.__kickoff(server,client)
 
-	def newClient(self, client, server):
+	def when_newClient(self, client, server):
 		self.online_total += 1
 		client['id'] = str(time.time())
 		log.print('New client comes at %s. There are %d clients online.' % (client['id'], self.online_total))
 
-
-	def clientLeft(self, client, server):
+	def when_clientLeft(self, client, server):
 		self.online_total -= 1
 		log.print('ID: [%s] left. There are %d clients online.' % (client['id'], self.online_total))
 		try:
@@ -58,8 +57,7 @@ class HCWS:
 		except:
 			log.print('ID: [%s] has already been removed.' % client['id'])
 
-
-	def msgReceived(self, client, server, msg):
+	def when_msgReceived(self, client, server, msg):
 
 	# Coming message structure:
 	# msg = {'action': 'put' or 'get',
@@ -68,36 +66,42 @@ class HCWS:
 	# 		'timeout': int,
 	# 		'isOnetime': boolean
 	# }
-		print(msg)
+		# print(msg)
 		try:
 			d_msg = json.loads(msg)
+		except:
+			self.__reply_and_kickoff(server, client, -1, 'Unable to parse data')
+			return -1
+
+		try:
 			if d_msg['action'] == 'put':
 				res = self.msgdb.insert(d_msg['key_hash'], d_msg['msg'], d_msg['timeout'], d_msg['isOnetime'])
 				if res == 0:
-					self.__reply(server, client, 0, 'OK')
+					self.__reply_and_kickoff(server, client, 0, 'OK')
 				else:
-					self.__reply(server, client, -1, errorcode.code2msg[res])
+					self.__reply_and_kickoff(server, client, -1, errorcode.code2msg[res])
 
 			elif d_msg['action'] == 'get':
 				msg_in_db = self.msgdb.get(d_msg['key_hash'])
 				if type(msg_in_db) == str:
-					self.__reply(server, client, 1, msg_in_db)
+					self.__reply_and_kickoff(server, client, 1, msg_in_db)
 				else:
-					self.__reply(server, client, -1, errorcode.code2msg[msg_in_db])
+					self.__reply_and_kickoff(server, client, -1, errorcode.code2msg[msg_in_db])
 
 			else:
-				self.__reply(server, client, -1, 'Bad request')
+				self.__reply_and_kickoff(server, client, -1, 'Bad request')
 		except:
 			print('Error occurred.')
-			self.__reply(server, client, -1, 'Server error')
-
+			self.__reply_and_kickoff(server, client, -1, 'Server error')
+			return -1
+		return 0
 
 	def start(self):
 		log.print('Launch a server on port %d...' % self.port)
-		server = WebsocketServer(self.port, host=self.host)
-		server.set_fn_new_client(self.newClient)
-		server.set_fn_client_left(self.clientLeft)
-		server.set_fn_message_received(self.msgReceived)
+		server = WebsocketServer(port=self.port, host=self.host)
+		# server.set_fn_new_client(self.when_newClient)
+		# server.set_fn_client_left(self.when_clientLeft)
+		server.set_fn_message_received(self.when_msgReceived)
 		server.run_forever()
 
 
@@ -109,10 +113,8 @@ def main(host, port, msgdb):
 
 
 if __name__ == '__main__':
-	mdb = MsgDB(max_n=-99, db_fname='hcwdb.db')
-	if len(sys.argv) < 2:
-		main(host='127.0.0.1', port=9002, msgdb=mdb)
-	else:
-		h, p = sys.argv[1].split(':')
-		main(h, int(p), msgdb=mdb)
+	print('hcwServer <host:port> <db_fname>')
+	h, p = sys.argv[1].split(':')
+	mdb = MsgDB(max_n=-99, db_fname=sys.argv[2])
+	main(h, int(p), msgdb=mdb)
 

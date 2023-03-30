@@ -1,17 +1,18 @@
 # Author: Johan Hanssen Seferidis
 # License: MIT
 
-import re
 import sys
 import struct
+import ssl
 from base64 import b64encode
 from hashlib import sha1
 import logging
+from socket import error as SocketError
+import errno
+import threading
+from socketserver import ThreadingMixIn, TCPServer, StreamRequestHandler
 
-if sys.version_info[0] < 3:
-    from SocketServer import ThreadingMixIn, TCPServer, StreamRequestHandler
-else:
-    from socketserver import ThreadingMixIn, TCPServer, StreamRequestHandler
+from websocket_server.thread import WebsocketServerThread
 
 logger = logging.getLogger(__name__)
 logging.basicConfig()
@@ -46,21 +47,14 @@ OPCODE_CLOSE_CONN   = 0x8
 OPCODE_PING         = 0x9
 OPCODE_PONG         = 0xA
 
+CLOSE_STATUS_NORMAL = 1000
+DEFAULT_CLOSE_REASON = bytes('', encoding='utf-8')
 
-# -------------------------------- API ---------------------------------
 
 class API():
 
-    def run_forever(self):
-        try:
-            logger.info("Listening on port %d for clients.." % self.port)
-            self.serve_forever()
-        except KeyboardInterrupt:
-            self.server_close()
-            logger.info("Server terminated.")
-        except Exception as e:
-            logger.error(str(e), exc_info=True)
-            exit(1)
+    def run_forever(self, threaded=False):
+        return self._run_forever(threaded)
 
     def new_client(self, client, server):
         pass
@@ -81,13 +75,29 @@ class API():
         self.message_received = fn
 
     def send_message(self, client, msg):
-        self._unicast_(client, msg)
+        self._unicast(client, msg)
 
     def send_message_to_all(self, msg):
-        self._multicast_(msg)
+        self._multicast(msg)
 
+    def deny_new_connections(self, status=CLOSE_STATUS_NORMAL, reason=DEFAULT_CLOSE_REASON):
+        self._deny_new_connections(status, reason)
 
-# ------------------------- Implementation -----------------------------
+    def allow_new_connections(self):
+        self._allow_new_connections()
+
+    def shutdown_gracefully(self, status=CLOSE_STATUS_NORMAL, reason=DEFAULT_CLOSE_REASON):
+        self._shutdown_gracefully(status, reason)
+
+    def shutdown_abruptly(self):
+        self._shutdown_abruptly()
+
+    def disconnect_clients_gracefully(self, status=CLOSE_STATUS_NORMAL, reason=DEFAULT_CLOSE_REASON):
+        self._disconnect_clients_gracefully(status, reason)
+
+    def disconnect_clients_abruptly(self):
+        self._disconnect_clients_abruptly()
+
 
 class WebsocketServer(ThreadingMixIn, TCPServer, API):
     """
@@ -114,13 +124,40 @@ class WebsocketServer(ThreadingMixIn, TCPServer, API):
     allow_reuse_address = True
     daemon_threads = True  # comment to keep threads alive until finished
 
-    clients = []
-    id_counter = 0
-
-    def __init__(self, port, host='127.0.0.1', loglevel=logging.WARNING):
+    def __init__(self, host='127.0.0.1', port=0, loglevel=logging.WARNING, key=None, cert=None):
         logger.setLevel(loglevel)
-        self.port = port
         TCPServer.__init__(self, (host, port), WebSocketHandler)
+        self.host = host
+        self.port = self.socket.getsockname()[1]
+
+        self.key = key
+        self.cert = cert
+
+        self.clients = []
+        self.id_counter = 0
+        self.thread = None
+
+        self._deny_clients = False
+
+    def _run_forever(self, threaded):
+        cls_name = self.__class__.__name__
+        try:
+            logger.info("Listening on port %d for clients.." % self.port)
+            if threaded:
+                self.daemon = True
+                self.thread = WebsocketServerThread(target=super().serve_forever, daemon=True, logger=logger)
+                logger.info(f"Starting {cls_name} on thread {self.thread.getName()}.")
+                self.thread.start()
+            else:
+                self.thread = threading.current_thread()
+                logger.info(f"Starting {cls_name} on main thread.")
+                super().serve_forever()
+        except KeyboardInterrupt:
+            self.server_close()
+            logger.info("Server terminated.")
+        except Exception as e:
+            logger.error(str(e), exc_info=True)
+            sys.exit(1)
 
     def _message_received_(self, handler, msg):
         self.message_received(self.handler_to_client(handler), self, msg)
@@ -132,11 +169,18 @@ class WebsocketServer(ThreadingMixIn, TCPServer, API):
         pass
 
     def _new_client_(self, handler):
+        if self._deny_clients:
+            status = self._deny_clients["status"]
+            reason = self._deny_clients["reason"]
+            handler.send_close(status, reason)
+            self._terminate_client_handler(handler)
+            return
+
         self.id_counter += 1
         client = {
             'id': self.id_counter,
             'handler': handler,
-            'address': handler.client_address,
+            'address': handler.client_address
         }
         self.clients.append(client)
         self.new_client(client, self)
@@ -147,23 +191,83 @@ class WebsocketServer(ThreadingMixIn, TCPServer, API):
         if client in self.clients:
             self.clients.remove(client)
 
-    def _unicast_(self, to_client, msg):
-        to_client['handler'].send_message(msg)
+    def _unicast(self, receiver_client, msg):
+        receiver_client['handler'].send_message(msg)
 
-    def _multicast_(self, msg):
+    def _multicast(self, msg):
         for client in self.clients:
-            self._unicast_(client, msg)
+            self._unicast(client, msg)
 
     def handler_to_client(self, handler):
         for client in self.clients:
             if client['handler'] == handler:
                 return client
 
+    def _terminate_client_handler(self, handler):
+        handler.keep_alive = False
+        handler.finish()
+        handler.connection.close()
+
+    def _terminate_client_handlers(self):
+        """
+        Ensures request handler for each client is terminated correctly
+        """
+        for client in self.clients:
+            self._terminate_client_handler(client["handler"])
+
+    def _shutdown_gracefully(self, status=CLOSE_STATUS_NORMAL, reason=DEFAULT_CLOSE_REASON):
+        """
+        Send a CLOSE handshake to all connected clients before terminating server
+        """
+        self.keep_alive = False
+        self._disconnect_clients_gracefully(status, reason)
+        self.server_close()
+        self.shutdown()
+
+    def _shutdown_abruptly(self):
+        """
+        Terminate server without sending a CLOSE handshake
+        """
+        self.keep_alive = False
+        self._disconnect_clients_abruptly()
+        self.server_close()
+        self.shutdown()
+
+    def _disconnect_clients_gracefully(self, status=CLOSE_STATUS_NORMAL, reason=DEFAULT_CLOSE_REASON):
+        """
+        Terminate clients gracefully without shutting down the server
+        """
+        for client in self.clients:
+            client["handler"].send_close(status, reason)
+        self._terminate_client_handlers()
+
+    def _disconnect_clients_abruptly(self):
+        """
+        Terminate clients abruptly (no CLOSE handshake) without shutting down the server
+        """
+        self._terminate_client_handlers()
+
+    def _deny_new_connections(self, status, reason):
+        self._deny_clients = {
+            "status": status,
+            "reason": reason,
+        }
+
+    def _allow_new_connections(self):
+        self._deny_clients = False
+
 
 class WebSocketHandler(StreamRequestHandler):
 
     def __init__(self, socket, addr, server):
         self.server = server
+        assert not hasattr(self, "_send_lock"), "_send_lock already exists"
+        self._send_lock = threading.Lock()
+        if server.key and server.cert:
+            try:
+                socket = ssl.wrap_socket(socket, server_side=True, certfile=server.cert, keyfile=server.key)
+            except: # Not sure which exception it throws if the key/cert isn't found
+                logger.warning("SSL not available (are the paths {} and {} correct for the key and cert?)".format(server.key, server.cert))
         StreamRequestHandler.__init__(self, socket, addr, server)
 
     def setup(self):
@@ -180,16 +284,17 @@ class WebSocketHandler(StreamRequestHandler):
                 self.read_next_message()
 
     def read_bytes(self, num):
-        # python3 gives ordinal of byte directly
-        bytes = self.rfile.read(num)
-        if sys.version_info[0] < 3:
-            return map(ord, bytes)
-        else:
-            return bytes
+        return self.rfile.read(num)
 
     def read_next_message(self):
         try:
             b1, b2 = self.read_bytes(2)
+        except SocketError as e:  # to be replaced with ConnectionResetError for py3
+            if e.errno == errno.ECONNRESET:
+                logger.info("Client closed connection.")
+                self.keep_alive = 0
+                return
+            b1, b2 = 0, 0
         except ValueError as e:
             b1, b2 = 0, 0
 
@@ -198,23 +303,19 @@ class WebSocketHandler(StreamRequestHandler):
         masked = b2 & MASKED
         payload_length = b2 & PAYLOAD_LEN
 
-        if not b1:
-            logger.info("Client closed connection.")
-            self.keep_alive = 0
-            return
         if opcode == OPCODE_CLOSE_CONN:
             logger.info("Client asked to close connection.")
             self.keep_alive = 0
             return
         if not masked:
-            logger.warn("Client must always be masked.")
+            logger.warning("Client must always be masked.")
             self.keep_alive = 0
             return
         if opcode == OPCODE_CONTINUATION:
-            logger.warn("Continuation frames are not supported.")
+            logger.warning("Continuation frames are not supported.")
             return
         elif opcode == OPCODE_BINARY:
-            logger.warn("Binary frames are not supported.")
+            logger.warning("Binary frames are not supported.")
             return
         elif opcode == OPCODE_TEXT:
             opcode_handler = self.server._message_received_
@@ -223,7 +324,7 @@ class WebSocketHandler(StreamRequestHandler):
         elif opcode == OPCODE_PONG:
             opcode_handler = self.server._pong_received_
         else:
-            logger.warn("Unknown opcode %#x." + opcode)
+            logger.warning("Unknown opcode %#x." % opcode)
             self.keep_alive = 0
             return
 
@@ -233,17 +334,39 @@ class WebSocketHandler(StreamRequestHandler):
             payload_length = struct.unpack(">Q", self.rfile.read(8))[0]
 
         masks = self.read_bytes(4)
-        decoded = ""
-        for char in self.read_bytes(payload_length):
-            char ^= masks[len(decoded) % 4]
-            decoded += chr(char)
-        opcode_handler(self, decoded)
+        message_bytes = bytearray()
+        for message_byte in self.read_bytes(payload_length):
+            message_byte ^= masks[len(message_bytes) % 4]
+            message_bytes.append(message_byte)
+        opcode_handler(self, message_bytes.decode('utf8'))
 
     def send_message(self, message):
         self.send_text(message)
 
     def send_pong(self, message):
         self.send_text(message, OPCODE_PONG)
+
+    def send_close(self, status=CLOSE_STATUS_NORMAL, reason=DEFAULT_CLOSE_REASON):
+        """
+        Send CLOSE to client
+
+        Args:
+            status: Status as defined in https://datatracker.ietf.org/doc/html/rfc6455#section-7.4.1
+            reason: Text with reason of closing the connection
+        """
+        if status < CLOSE_STATUS_NORMAL or status > 1015:
+            raise Exception(f"CLOSE status must be between 1000 and 1015, got {status}")
+
+        header = bytearray()
+        payload = struct.pack('!H', status) + reason
+        payload_length = len(payload)
+        assert payload_length <= 125, "We only support short closing reasons at the moment"
+
+        # Send CLOSE with status & reason
+        header.append(FIN | OPCODE_CLOSE_CONN)
+        header.append(payload_length)
+        with self._send_lock:
+            self.request.send(header + payload)
 
     def send_text(self, message, opcode=OPCODE_TEXT):
         """
@@ -257,12 +380,8 @@ class WebSocketHandler(StreamRequestHandler):
             if not message:
                 logger.warning("Can\'t send message, message is not valid UTF-8")
                 return False
-        elif sys.version_info < (3,0) and (isinstance(message, str) or isinstance(message, unicode)):
-            pass
-        elif isinstance(message, str):
-            pass
-        else:
-            logger.warning('Can\'t send message, message has to be a string or bytes. Given type is %s' % type(message))
+        elif not isinstance(message, str):
+            logger.warning('Can\'t send message, message has to be a string or bytes. Got %s' % type(message))
             return False
 
         header  = bytearray()
@@ -290,35 +409,56 @@ class WebSocketHandler(StreamRequestHandler):
             raise Exception("Message is too big. Consider breaking it into chunks.")
             return
 
-        self.request.send(header + payload)
+        with self._send_lock:
+            self.request.send(header + payload)
+
+    def read_http_headers(self):
+        headers = {}
+        # first line should be HTTP GET
+        http_get = self.rfile.readline().decode().strip()
+        assert http_get.upper().startswith('GET')
+        # remaining should be headers
+        while True:
+            header = self.rfile.readline().decode().strip()
+            if not header:
+                break
+            head, value = header.split(':', 1)
+            headers[head.lower().strip()] = value.strip()
+        return headers
 
     def handshake(self):
-        message = self.request.recv(1024).decode().strip()
-        upgrade = re.search('\nupgrade[\s]*:[\s]*websocket', message.lower())
-        if not upgrade:
+        headers = self.read_http_headers()
+
+        try:
+            assert headers['upgrade'].lower() == 'websocket'
+        except AssertionError:
             self.keep_alive = False
             return
-        key = re.search('\n[sS]ec-[wW]eb[sS]ocket-[kK]ey[\s]*:[\s]*(.*)\r\n', message)
-        if key:
-            key = key.group(1)
-        else:
+
+        try:
+            key = headers['sec-websocket-key']
+        except KeyError:
             logger.warning("Client tried to connect but was missing a key")
             self.keep_alive = False
             return
+
         response = self.make_handshake_response(key)
-        self.handshake_done = self.request.send(response.encode())
+        with self._send_lock:
+            self.handshake_done = self.request.send(response.encode())
         self.valid_client = True
         self.server._new_client_(self)
 
-    def make_handshake_response(self, key):
+    @classmethod
+    def make_handshake_response(cls, key):
         return \
           'HTTP/1.1 101 Switching Protocols\r\n'\
           'Upgrade: websocket\r\n'              \
           'Connection: Upgrade\r\n'             \
           'Sec-WebSocket-Accept: %s\r\n'        \
-          '\r\n' % self.calculate_response_key(key)
+          '\r\n' % cls.calculate_response_key(key)
 
-    def calculate_response_key(self, key):
+    @classmethod
+    def calculate_response_key(cls, key):
         GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
         hash = sha1(key.encode() + GUID.encode())
         response_key = b64encode(hash.digest()).strip()
