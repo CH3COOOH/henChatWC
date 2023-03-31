@@ -3,8 +3,8 @@
 // 2023.03.31: Timeout and isOneTime become editable
 
 var CLIENT_VER = '230331';
-// var DEFAULT_SERVER = 'wss://app.henchat.net/hcw';
-var DEFAULT_SERVER = 'ws://127.0.0.1:9002';
+var DEFAULT_SERVER = 'wss://app.henchat.net/hcw';
+// var DEFAULT_SERVER = 'ws://127.0.0.1:9002';
 
 var cache_0 = null;
 
