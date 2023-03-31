@@ -1,18 +1,5 @@
 <!DOCTYPE html>
 <html>
-<style>
-#log{
-	width: 100%;
-	height: 425px;
-	overflow: auto;
-}
-#receiverChoice{
-	width: 100%;
-	height: 400px;
-	overflow: auto;
-}
-
-</style>
 <head>
 	<title>henChatW</title>
 	<meta http-equiv="Content-Type" content="text/html; charset=utf-8" /> 
@@ -34,17 +21,33 @@
 <body>
 <div>
 <table width="100%" border="0" id="container">
-  <tr><td height="100%" align="left">MESSAGE BOARD</td></tr>
   <tr><td height="100%" align="left">
+	<label>MESSAGE BOARD</label>
     <textarea rows="10" class="form_input" id="output_msg" disabled></textarea>
   </td></tr>
-  <tr><td height="100%" align="left">MSG/HASH</td></tr>
   <tr><td height="100%" align="left">
+	<label>MSG/HASH</label>
     <textarea rows="4" class="form_input" id="input_msg"></textarea>
   </td></tr>
-  <tr><td height="100%" align="left">KEY</td></tr>
+   <tr><td height="100%" align="left">
+    <label>TIMEOUT</label>
+	<select id="input_timeout">
+		<option value="">0.5 min</option>
+		<option value="">5 min</option>
+		<option value="">10 min</option>
+		<option value="">30 min</option>
+		<option value="">1 h</option>
+		<option value="">12 h</option>
+		<option value="">24 h</option>
+		<option value="">36 h</option>
+		<option value="">48 h</option>
+	</select>
+	<input type="checkbox" id="input_isOneTime" checked>
+	<label>ONE-TIME</label>
+  </td></tr>
   <tr><td height="100%" align="left">
-    <input type="text" class="form_input" id="input_key" maxlength="16",>
+	<label>KEY</label>
+    <input type="text" class="form_input" id="input_key" maxlength="16">
   </td></tr>
   <tr><td height="100%" align="left">
     <button id="btn_gen">Generate</button>

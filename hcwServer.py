@@ -1,10 +1,12 @@
 # -*- coding:utf-8 -*-
 
-# Start: 2023.03.26
-# Update:
+'''
+Start: 2023.03.26
+Update:
+2023.03.31: Add policy for message length and timeout
+'''
 
 import time
-import hashlib
 import json
 import sys
 
@@ -13,23 +15,16 @@ from msgdb import MsgDB
 import azlib.pr as apr
 import errorcode
 
-SERVER_VER = '230327'
+SERVER_VER = '230331'
 
 log = apr.Log()
-
-def randStr(length):
-	from random import choice
-	randPool = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!#$%&*?@~-'
-	return ''.join(choice(randPool) for _ in xrange(length))
 
 class HCWS:
 
 	def __init__(self, port, host, msgdb):
 		self.host = host
 		self.port = port
-		self.onlineLst = {}
 		self.msgdb = msgdb
-		self.online_total = 0
 
 	def __reply(self, server, client, type_, payload):
 		reply = {'type': type_, 'payload': payload}
@@ -43,22 +38,13 @@ class HCWS:
 	def __reply_and_kickoff(self, server, client, type_, payload):
 		self.__reply(server, client, type_, payload)
 		self.__kickoff(server,client)
-
-	def when_newClient(self, client, server):
-		self.online_total += 1
-		client['id'] = str(time.time())
-		log.print('New client comes at %s. There are %d clients online.' % (client['id'], self.online_total))
-
-	def when_clientLeft(self, client, server):
-		self.online_total -= 1
-		log.print('ID: [%s] left. There are %d clients online.' % (client['id'], self.online_total))
-		try:
-			del(self.onlineLst[client['id']])
-		except:
-			log.print('ID: [%s] has already been removed.' % client['id'])
+	
+	def __policy_outdate(self, outdate):
+		if outdate - time.time() > 172800.:
+			return False
+		return True
 
 	def when_msgReceived(self, client, server, msg):
-
 	# Coming message structure:
 	# msg = {'action': 'put' or 'get',
 	# 		'msg': str,
@@ -66,15 +52,25 @@ class HCWS:
 	# 		'timeout': int,
 	# 		'isOnetime': boolean
 	# }
-		# print(msg)
+
+		## -- Forbid big data
+		if len(msg) > 4096:
+			self.__reply_and_kickoff(server, client, -1, '<Data is too big>')
+			return -1
+
 		try:
 			d_msg = json.loads(msg)
 		except:
-			self.__reply_and_kickoff(server, client, -1, 'Unable to parse data')
+			## -- Bad format
+			self.__reply_and_kickoff(server, client, -1, '<Unable to parse data>')
 			return -1
 
 		try:
 			if d_msg['action'] == 'put':
+				if self.__policy_outdate(d_msg['timeout']) == False:
+					## -- Timeout set too long
+					self.__reply_and_kickoff(server, client, -1, '<Invalid timeout>')
+					return -1
 				res = self.msgdb.insert(d_msg['key_hash'], d_msg['msg'], d_msg['timeout'], d_msg['isOnetime'])
 				if res == 0:
 					self.__reply_and_kickoff(server, client, 0, 'OK')
@@ -89,18 +85,17 @@ class HCWS:
 					self.__reply_and_kickoff(server, client, -1, errorcode.code2msg[msg_in_db])
 
 			else:
-				self.__reply_and_kickoff(server, client, -1, 'Bad request')
+				self.__reply_and_kickoff(server, client, -1, '<Bad request>')
 		except:
 			print('Error occurred.')
-			self.__reply_and_kickoff(server, client, -1, 'Server error')
+			self.__reply_and_kickoff(server, client, -1, '<Server error>')
 			return -1
 		return 0
 
 	def start(self):
+		print('henChatWC_%s' % SERVER_VER)
 		log.print('Launch a server on port %d...' % self.port)
 		server = WebsocketServer(port=self.port, host=self.host)
-		# server.set_fn_new_client(self.when_newClient)
-		# server.set_fn_client_left(self.when_clientLeft)
 		server.set_fn_message_received(self.when_msgReceived)
 		server.run_forever()
 
