@@ -1,9 +1,10 @@
 // 2023.03.26: 1st live
 // 2023.03.27: Get url without params; no server error message in output_msg
+// 2023.03.31: Timeout and isOneTime become editable
 
-var CLIENT_VER = '230327';
-var DEFAULT_SERVER = 'wss://app.henchat.net/hcw';
-// var DEFAULT_SERVER = 'ws://127.0.0.1:9002';
+var CLIENT_VER = '230331';
+// var DEFAULT_SERVER = 'wss://app.henchat.net/hcw';
+var DEFAULT_SERVER = 'ws://127.0.0.1:9002';
 
 var cache_0 = null;
 
@@ -71,12 +72,26 @@ function randomStr(length, symbol=true) {
 	return gen;
 }
 
+function parseTimeout(sTimeout) {
+	buf = sTimeout.split(' ')
+	var n = parseFloat(buf[0]);
+	var u = buf[1];
+	if (u === 'min') {
+		return n * 60;
+	}
+	if (u === 'h') {
+		return n * 3600;
+	}
+	return 86400; // Default: 24h
+}
+
 // ==============================
 // online = true: online mode
 // online = false: offline mode
 // ==============================
 function formStatusSet() {
 	// $('#s_send').prop('enabled', true);
+	document.getElementById("input_timeout").selectedIndex = 5;
 	return 0;
 }
 // ===========================================
@@ -171,20 +186,20 @@ function getUrlWithoutParam()
 	return window.location.protocol+"//"+window.location.host+""+window.location.pathname;
 }
 
-function msg2Json(msg, key)
+function msg2Json(msg, key, timeout, isOnetime)
 {
 	cache_0 = CryptoJS.SHA1(msg + randomStr(32, false)).toString();
 	return {
 		'action': 'put',
 		'msg': aesEncrypt(msg, key),
 		'key_hash': cache_0,
-		'timeout': new Date().getTime() + 86400, // Default: 24h
-		'isOnetime': true
+		'timeout': new Date().getTime()/1000. + timeout,  // Take care of the unit!!!
+		'isOnetime': isOnetime
 	};
 }
 
 // ===== Init ======================================
-// formStatusSet();
+formStatusSet();
 if (getHashAndKeyFromUrl() === 2) {
 	var get_requirement = JSON.stringify({
 		'action': 'get',
