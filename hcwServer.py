@@ -4,18 +4,20 @@
 Start: 2023.03.26
 Update:
 2023.03.31: Add policy for message length and timeout
+2023.04.01: Add outdated message cleaner thread
 '''
 
 import time
 import json
 import sys
+import threading
 
 from websocket_server import WebsocketServer
 from msgdb import MsgDB
 import azlib.pr as apr
 import errorcode
 
-SERVER_VER = '230331'
+SERVER_VER = '230401'
 
 log = apr.Log()
 
@@ -44,7 +46,10 @@ class HCWS:
 			return False
 		return True
 
-	def when_msgReceived(self, client, server, msg):
+	# def __clean_timeout(self):
+		
+
+	def __when_msgReceived(self, client, server, msg):
 	# Coming message structure:
 	# msg = {'action': 'put' or 'get',
 	# 		'msg': str,
@@ -92,14 +97,28 @@ class HCWS:
 			return -1
 		return 0
 
+	def __auto_clean_daemon(self, period, batchSize):
+		## Clean outdated messages
+		log.print('Outdated cleaner launched...')
+		while True:
+			target_hash = self.msgdb.get_outdated_all(batchSize=batchSize)
+			for h in target_hash:
+				log.print(f"Cleanning outdated hash: {h}")
+				self.msgdb.delete(h)
+			time.sleep(period)
+
+
 	def start(self):
 		print('henChatWC_%s' % SERVER_VER)
 		log.print('Launch a server on port %d...' % self.port)
+		## Server config
 		server = WebsocketServer(port=self.port, host=self.host)
-		server.set_fn_message_received(self.when_msgReceived)
+		server.set_fn_message_received(self.__when_msgReceived)
+		## Daemon config
+		t_daemon = threading.Thread(target=self.__auto_clean_daemon, args=(30, 10,))
+		## Start all
+		t_daemon.start()
 		server.run_forever()
-
-
 
 def main(host, port, msgdb):
 	a1 = HCWS(port, host, msgdb)

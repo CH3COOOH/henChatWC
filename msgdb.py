@@ -38,14 +38,29 @@ class MsgDB:
 			self.delete(hash_)
 		return msg
 
+	def get_outdated_all(self, batchSize=3):
+		outdated_hash = []
+		idx = 0
+		while True:
+			cache = self.ldb.extract_rows_by_row_num(idx, batchSize)
+			if len(cache) == 0:
+				break
+			for r in cache:
+				if r[2] < time.time():
+					outdated_hash.append(r[0])
+			idx += batchSize
+		return outdated_hash
+
+
 if __name__ == '__main__':
 	mdb = MsgDB(5)
 	print(mdb.insert('90da67dsfas2', 'fwqdq984dawds6ab==', time.time(), True))
 	print(mdb.insert('80da6755as2s', '48aff4fdawds64fa5a==', time.time()+3600, True))
-	print(mdb.insert('12da6755adsv', 'awdsf4fdawds64fa5a==', time.time()+3600, False))
+	print(mdb.insert('12da6755adsv', 'awdsf4fdawds64fa5a==', time.time()+5, False))
 	time.sleep(3)
-	print(mdb.get('90da67dsfas2'))  ## -0x11
-	print(mdb.get('80da6755as2s'))
-	print(mdb.get('80da6755as2s'))  ## -0x12
-	print(mdb.get('12da6755adsv'))
-	print(mdb.get('12da6755adsv'))
+	# print(mdb.get('90da67dsfas2'))  ## -0x11
+	# print(mdb.get('80da6755as2s'))
+	# print(mdb.get('80da6755as2s'))  ## -0x12
+	# print(mdb.get('12da6755adsv'))
+	# print(mdb.get('12da6755adsv'))
+	print(mdb.get_outdated_all())

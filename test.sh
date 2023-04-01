@@ -1,0 +1,1 @@
+python3 ./hcwServer.py 127.0.0.1:9002 test.db

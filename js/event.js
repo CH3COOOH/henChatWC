@@ -7,7 +7,7 @@ $('#btn_gen').click(function () {
 		return -1;
 	}
 	if ($('#input_key').val() === '') {
-		$('#input_key').val(randomStr(32, false));
+		$('#input_key').val(randomStr(16, false));
 	}
 	var send_msg = $('#input_msg').val();
 	var key = $('#input_key').val();
