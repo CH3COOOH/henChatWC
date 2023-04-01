@@ -45,11 +45,21 @@ class LowestDB:
 		return f"DELETE FROM {self.table_name} WHERE {X}=?"
 
 	def __isReachLimitation(self, c):
-		dbsize = list(c.execute(f"SELECT COUNT(*) FROM {self.table_name}"))[0][0]
+		dbsize = self.getTableLength(c)
 		if dbsize == self.max_n:
 			return True
 		else:
 			return False
+
+	def getTableLength(self, c=None):
+		conn = None
+		if c == None:
+			conn = sqlite3.connect(self.db_fname)
+			c = conn.cursor()
+		length = list(c.execute(f"SELECT COUNT(*) FROM {self.table_name}"))[0][0]
+		if c == None:
+			conn.close()
+		return length
 
 	def insert_row(self, hash_, values):
 		if len(values) != len(self.columns):
@@ -101,7 +111,14 @@ class LowestDB:
 		if len(res) == 0:
 			return None
 		else:
-			return res[0]	
+			return res[0]
+
+	def extract_rows_by_row_num(self, n, batchSize=1):
+		conn = sqlite3.connect(self.db_fname)
+		c = conn.cursor()
+		res = list(c.execute(f"SELECT * FROM {self.table_name} LIMIT {n},{batchSize}"))
+		conn.close()
+		return res
 	
 	def _inner_fun_test(self):
 		print(self.__cmd_select_FromWhere_eq_())
